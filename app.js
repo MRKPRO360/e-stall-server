@@ -20,13 +20,23 @@ const run = async function () {
     });
 
     const categoriesCollection = client.db("eStall").collection("categories");
+    const usersCollection = client.db("eStall").collection("user");
 
+    // get category by id
     app.get("/categories/:id", async (req, res) => {
       const id = req.params.id;
 
       const query = { id: id };
       const categories = await categoriesCollection.find(query).toArray();
       res.send(categories);
+    });
+
+    // create a new user with role(buyer, seller, admin)
+    app.post("/users", async (req, res) => {
+      const doc = req.body;
+
+      const result = await usersCollection.insertOne(doc);
+      res.send(result);
     });
   } finally {
   }
