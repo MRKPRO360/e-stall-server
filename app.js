@@ -40,6 +40,8 @@ const run = async function () {
 
     const categoriesCollection = client.db("eStall").collection("categories");
     const usersCollection = client.db("eStall").collection("user");
+    const bookingsCollection = client.db("eStall").collection("bookings");
+    const productsCollection = client.db("eStall").collection("products");
 
     // creating jwt token
 
@@ -50,6 +52,19 @@ const run = async function () {
       });
       res.send({ token });
     });
+
+    // verifying seller by jwt
+    const verifySeller = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+
+      const user = await usersCollection.findOne(query);
+
+      if (user?.role !== "seller")
+        return res.status(403).send({ message: "Forbidden access" });
+
+      next();
+    };
 
     // get category by id
     app.get("/categories/:id", async (req, res) => {
@@ -102,6 +117,27 @@ const run = async function () {
 
       const user = await usersCollection.findOne(query);
       res.send({ isAdmin: user?.role === "admin" });
+    });
+
+    // create a booking
+    app.post("/bookings", verifyJWT, async (req, res) => {
+      const booking = req.body;
+      const decoded = req.decoded;
+
+      if (decoded.email !== req.body.email) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+
+      const result = await bookingsCollection.insertOne(booking);
+      res.send(result);
+    });
+
+    // create a product
+
+    app.post("/products", verifyJWT, verifySeller, async (req, res) => {
+      const product = req.body;
+      const result = await productsCollection.insertOne(product);
+      res.send(result);
     });
   } finally {
   }
