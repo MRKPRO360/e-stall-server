@@ -70,7 +70,7 @@ const run = async function () {
     app.get("/categories/:id", async (req, res) => {
       const id = req.params.id;
 
-      const query = { id: id };
+      const query = { id: id, sold: false };
       const categories = await categoriesCollection.find(query).toArray();
       res.send(categories);
     });
@@ -155,6 +155,8 @@ const run = async function () {
     app.post("/products", verifyJWT, verifySeller, async (req, res) => {
       const product = req.body;
       const result = await productsCollection.insertOne(product);
+      // push this item into category collection
+      await categoriesCollection.insertOne(product);
       res.send(result);
     });
 
