@@ -1,4 +1,4 @@
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
@@ -132,11 +132,55 @@ const run = async function () {
       res.send(result);
     });
 
-    // create a product
+    // get all products for specific seller
 
+    app.get("/products", verifyJWT, verifySeller, async (req, res) => {
+      const decodedEmail = req.decodedEmail;
+      const query = { email: decodedEmail };
+
+      const products = await productsCollection.find(query).toArray();
+
+      res.send(products);
+    });
+
+    // get all advertised products
+    app.get("/advertisedProducts", async (req, res) => {
+      const query = { advertised: true };
+
+      const products = await productsCollection.find(query).toArray();
+      res.send(products);
+    });
+
+    // create a product
     app.post("/products", verifyJWT, verifySeller, async (req, res) => {
       const product = req.body;
       const result = await productsCollection.insertOne(product);
+      res.send(result);
+    });
+
+    // update a product
+    app.patch("/products/:id", verifyJWT, verifySeller, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: ObjectId(id) };
+
+      const updatedDoc = {
+        $set: {
+          advertised: true,
+        },
+      };
+
+      const result = await productsCollection.updateOne(query, updatedDoc);
+
+      res.send(result);
+    });
+
+    // delete a product
+    app.delete("/products/:id", verifyJWT, verifySeller, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: ObjectId(id) };
+
+      const result = await productsCollection.deleteOne(query);
+
       res.send(result);
     });
   } finally {
