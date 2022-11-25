@@ -119,6 +119,22 @@ const run = async function () {
       res.send({ isAdmin: user?.role === "admin" });
     });
 
+    // get all sellers for admin
+    app.get("/users/sellersForAdmin", async (req, res) => {
+      const query = { role: "seller" };
+
+      const users = await usersCollection.find(query).toArray();
+      res.send(users);
+    });
+
+    // get all sellers for admin
+    app.get("/users/buyersForAdmin", async (req, res) => {
+      const query = { role: "buyer" };
+
+      const users = await usersCollection.find(query).toArray();
+      res.send(users);
+    });
+
     // create a booking
     app.post("/bookings", verifyJWT, async (req, res) => {
       const booking = req.body;
