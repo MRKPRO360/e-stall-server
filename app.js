@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 const jwt = require("jsonwebtoken");
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 
 const port = process.env.PORT || 5000;
 
@@ -42,6 +43,8 @@ const run = async function () {
     const usersCollection = client.db("eStall").collection("user");
     const bookingsCollection = client.db("eStall").collection("bookings");
     const productsCollection = client.db("eStall").collection("products");
+    const reportedCollection = client.db("eStall").collection("reported");
+    const paymentsCollection = client.db("eStall").collection("payments");
 
     // creating jwt token
 
@@ -69,6 +72,7 @@ const run = async function () {
     // verifying seller by jwt
     const verifySeller = async (req, res, next) => {
       const email = req.decoded.email;
+
       const query = { email: email };
 
       const user = await usersCollection.findOne(query);
@@ -171,7 +175,8 @@ const run = async function () {
       }
     );
 
-    // update a seller
+    // update(verify) a seller
+    //NOTE: not working for categories
     app.patch(
       "/users/sellersForAdmin/:id",
       verifyJWT,
@@ -182,7 +187,9 @@ const run = async function () {
 
         const filter = { _id: ObjectId(id) };
         const query = { sellerEmail: email };
+
         console.log(query);
+
         const updatedDoc = {
           $set: {
             verified: true,
@@ -232,6 +239,15 @@ const run = async function () {
       res.send(bookings);
     });
 
+    // get individual bookings for specific user
+    app.get("/bookings/:id", verifyJWT, verifyBuyer, async (req, res) => {
+      const id = req.params.id;
+
+      const query = { _id: ObjectId(id) };
+      const booking = await bookingsCollection.findOne(query);
+      res.send(booking);
+    });
+
     // create a booking
     app.post("/bookings", verifyJWT, async (req, res) => {
       const booking = req.body;
@@ -257,8 +273,8 @@ const run = async function () {
     // get all products for specific seller
 
     app.get("/products", verifyJWT, verifySeller, async (req, res) => {
-      const decodedEmail = req.decodedEmail;
-      const query = { email: decodedEmail };
+      const decodedEmail = req.decoded.email;
+      const query = { sellerEmail: decodedEmail };
 
       const products = await productsCollection.find(query).toArray();
 
@@ -266,8 +282,9 @@ const run = async function () {
     });
 
     // get all advertised products
+
     app.get("/advertisedProducts", async (req, res) => {
-      const query = { advertised: true };
+      const query = { advertised: true, sold: false };
 
       const products = await productsCollection.find(query).toArray();
       res.send(products);
@@ -304,6 +321,98 @@ const run = async function () {
       const query = { _id: ObjectId(id) };
 
       const result = await productsCollection.deleteOne(query);
+
+      res.send(result);
+    });
+
+    // stripe payment-intent
+    app.post(
+      "/create-payment-intent",
+      verifyJWT,
+      verifyBuyer,
+      async (req, res) => {
+        const book = req.body;
+        const price = book.price;
+        if (!price) return;
+        const amount = price * 100;
+
+        const paymentIntent = await stripe.paymentIntents.create({
+          currency: "usd",
+          amount: amount,
+          payment_method_types: ["card"],
+        });
+
+        res.send({
+          clientSecret: paymentIntent.client_secret,
+        });
+      }
+    );
+
+    // add reported product
+    app.post("/reportedProducts", verifyJWT, verifyBuyer, async (req, res) => {
+      const product = req.body;
+      const result = await reportedCollection.insertOne(product);
+      res.send(result);
+    });
+
+    // get reported product for admin
+    app.get("/reportedProducts", verifyJWT, verifyAdmin, async (req, res) => {
+      const query = {};
+      const products = await reportedCollection.find(query).toArray();
+      res.send(products);
+    });
+
+    // delete reported product
+    app.delete(
+      "/reportedProducts/:id",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const productId = req.query.productId;
+        const query = { _id: ObjectId(productId) };
+
+        const filter = { _id: ObjectId(id) };
+        const products = await reportedCollection.deleteOne(filter);
+
+        // remove it from categories
+        await categoriesCollection.deleteOne(query);
+        res.send(products);
+      }
+    );
+    // creating payment
+    app.post("/payments", verifyJWT, verifyBuyer, async (req, res) => {
+      const payment = req.body;
+      const result = await paymentsCollection.insertOne(payment);
+
+      const id = payment.bookingId;
+      const categoryProductId = payment.productId;
+
+      const filter = { _id: ObjectId(id) };
+
+      const updatedDoc = {
+        $set: {
+          paid: true,
+          transactionId: payment.transactionId,
+        },
+      };
+
+      //updating booking
+      await bookingsCollection.updateOne(filter, updatedDoc);
+
+      // updating products(advertised)
+      const updatedDocForProducts = {
+        $set: {
+          advertised: false,
+          sold: true,
+        },
+      };
+      const search = { _id: ObjectId(categoryProductId) };
+      await productsCollection.updateOne(search, updatedDocForProducts);
+
+      //deleting from categories collection
+      const query = { _id: ObjectId(categoryProductId) };
+      await categoriesCollection.deleteOne(query);
 
       res.send(result);
     });
