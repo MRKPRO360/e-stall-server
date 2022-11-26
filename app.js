@@ -53,6 +53,19 @@ const run = async function () {
       res.send({ token });
     });
 
+    // verifying buyer by jwt
+    const verifyBuyer = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+
+      const user = await usersCollection.findOne(query);
+
+      if (user?.role !== "buyer")
+        return res.status(403).send({ message: "Forbidden access" });
+
+      next();
+    };
+
     // verifying seller by jwt
     const verifySeller = async (req, res, next) => {
       const email = req.decoded.email;
@@ -61,6 +74,19 @@ const run = async function () {
       const user = await usersCollection.findOne(query);
 
       if (user?.role !== "seller")
+        return res.status(403).send({ message: "Forbidden access" });
+
+      next();
+    };
+
+    // verifying admin by jwt
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email: email };
+
+      const user = await usersCollection.findOne(query);
+
+      if (user?.role !== "admin")
         return res.status(403).send({ message: "Forbidden access" });
 
       next();
@@ -120,19 +146,90 @@ const run = async function () {
     });
 
     // get all sellers for admin
-    app.get("/users/sellersForAdmin", async (req, res) => {
-      const query = { role: "seller" };
+    app.get(
+      "/users/sellersForAdmin",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
+        const query = { role: "seller" };
 
-      const users = await usersCollection.find(query).toArray();
-      res.send(users);
-    });
+        const users = await usersCollection.find(query).toArray();
+        res.send(users);
+      }
+    );
 
     // get all sellers for admin
-    app.get("/users/buyersForAdmin", async (req, res) => {
-      const query = { role: "buyer" };
+    app.get(
+      "/users/buyersForAdmin",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
+        const query = { role: "buyer" };
 
-      const users = await usersCollection.find(query).toArray();
-      res.send(users);
+        const users = await usersCollection.find(query).toArray();
+        res.send(users);
+      }
+    );
+
+    // update a seller
+    app.patch(
+      "/users/sellersForAdmin/:id",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const email = req.query.email;
+
+        const filter = { _id: ObjectId(id) };
+        const query = { sellerEmail: email };
+        console.log(query);
+        const updatedDoc = {
+          $set: {
+            verified: true,
+          },
+        };
+
+        // as well as update the categories data
+        await categoriesCollection.updateOne(query, updatedDoc);
+
+        const result = await usersCollection.updateOne(filter, updatedDoc);
+        res.send(result);
+      }
+    );
+
+    // delete a seller
+    app.delete(
+      "/users/sellersForAdmin/:id",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const filter = { _id: ObjectId(id) };
+
+        const result = await usersCollection.deleteOne(filter);
+        res.send(result);
+      }
+    );
+
+    // delete a buyer
+    app.delete(
+      "/users/buyersForAdmin/:id",
+      verifyJWT,
+      verifyAdmin,
+      async (req, res) => {
+        const id = req.params.id;
+        const filter = { _id: ObjectId(id) };
+
+        const result = await usersCollection.deleteOne(filter);
+        res.send(result);
+      }
+    );
+
+    // get all bookings for specific user
+    app.get("/bookings", verifyJWT, verifyBuyer, async (req, res) => {
+      const query = { email: req.decoded.email };
+      const bookings = await bookingsCollection.find(query).toArray();
+      res.send(bookings);
     });
 
     // create a booking
@@ -145,6 +242,15 @@ const run = async function () {
       }
 
       const result = await bookingsCollection.insertOne(booking);
+      res.send(result);
+    });
+
+    // delete a booking
+
+    app.delete("/bookings/:id", verifyJWT, verifyBuyer, async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: ObjectId(id) };
+      const result = await bookingsCollection.deleteOne(filter);
       res.send(result);
     });
 
@@ -176,7 +282,7 @@ const run = async function () {
       res.send(result);
     });
 
-    // update a product
+    // update(advertised) a product
     app.patch("/products/:id", verifyJWT, verifySeller, async (req, res) => {
       const id = req.params.id;
       const query = { _id: ObjectId(id) };
